@@ -1,0 +1,20 @@
+services:
+  source_db:
+    image: postgres:16
+    container_name: kumparan_source_db
+    environment:
+      POSTGRES_USER: source
+      POSTGRES_PASSWORD: source
+      POSTGRES_DB: kumparan_source
+    ports:
+      - "5433:5432"
+    volumes:
+      - source_db_data:/var/lib/postgresql/data
+      - ./sql/ddl_source.sql:/docker-entrypoint-initdb.d/01_ddl.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U source -d kumparan_source"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  source_db_data:
