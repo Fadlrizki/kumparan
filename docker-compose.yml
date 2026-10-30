@@ -1,3 +1,25 @@
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.10.5
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow_db/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__WEBSERVER__SECRET_KEY: dev-only-secret
+    _PIP_ADDITIONAL_REQUIREMENTS: "pyarrow"
+    GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/secrets/adc.json
+    AIRFLOW_CONN_SOURCE_POSTGRES: postgresql://source:source@source_db:5432/kumparan_source
+    PROJECT_ID: ${PROJECT_ID}
+    AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?project=${PROJECT_ID}
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./sql:/opt/airflow/sql
+    - ${HOME}/.config/gcloud/application_default_credentials.json:/opt/airflow/secrets/adc.json:ro
+  depends_on:
+    airflow_db:
+      condition: service_healthy
+    source_db:
+      condition: service_healthy
+
 services:
   source_db:
     image: postgres:16
@@ -16,5 +38,45 @@ services:
       interval: 5s
       retries: 10
 
+  airflow_db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 5s
+      retries: 10
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate &&
+        airflow users create --username admin --password admin \
+          --firstname Admin --lastname User --role Admin --email admin@example.com || true
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
 volumes:
   source_db_data:
+  airflow_db_data:
