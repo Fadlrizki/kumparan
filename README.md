@@ -320,8 +320,7 @@ validating the solution.
 **What I did with it**
 - Reviewed the AI's critique and chose to adopt the redesign, and asked for the process to
   be simplified.
-- Ran and verified the pipeline myself: [list only what you actually saw: full load,
-  incremental load, soft/hard delete handling, idempotency, outage recovery, 2016 backfill].
+- Ran and verified the pipeline myself.
 - Debugged environment issues while running it (e.g. missing `.env` variables, shell quoting,
   Docker/Airflow setup).
 - Made decisions: dropped the `_loaded_at` column, added synthetic 2016 data without a tag to
