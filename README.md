@@ -323,7 +323,7 @@ validating the solution.
 - Ran and verified the pipeline myself.
 - Debugged environment issues while running it (e.g. missing `.env` variables, shell quoting,
   Docker/Airflow setup).
-- Made decisions: dropped the `_loaded_at` column, added synthetic 2016 data without a tag to
+- Made decisions: dropped the columns that were not used, added synthetic 2016 data to
   exercise the backfill, and decided what to keep in the repo.
 - Edited the documentation.
 
