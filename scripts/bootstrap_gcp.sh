@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Membuat bucket staging (sekali saja). Dataset/tabel BigQuery dibuat oleh task init_dwh.
+# Bucket staging
 set -euo pipefail
 : "${PROJECT_ID:?export PROJECT_ID dulu}"
 BUCKET="gs://${PROJECT_ID}-kumparan-staging"

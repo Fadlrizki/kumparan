@@ -1,6 +1,4 @@
--- USULAN: ddl_source.sql asli sudah dihapus dari repo. Ganti dengan versi aslimu kalau berbeda,
--- tapi 3 hal ini wajib: PK pada id, kolom timestamptz, dan updated_at ikut berubah di SETIAP UPDATE
--- (termasuk soft delete) + index pada updated_at. Pipeline bergantung pada kontrak ini.
+--skema tabel sumber (Postgres)
 CREATE TABLE IF NOT EXISTS articles (
   id           BIGINT PRIMARY KEY,
   title        TEXT,

@@ -1,6 +1,4 @@
--- Dijalankan otomatis oleh task init_dwh (idempotent).
--- CATATAN: CREATE TABLE IF NOT EXISTS tidak mengubah tabel yang sudah ada. Kalau tabel lama
--- dipartisi by published_at, DROP dulu lalu jalankan ulang pipeline (full load otomatis).
+# skema tabel sumber (Postgres)
 CREATE SCHEMA IF NOT EXISTS staging OPTIONS (location = "asia-southeast2");
 CREATE SCHEMA IF NOT EXISTS dwh     OPTIONS (location = "asia-southeast2");
 
