@@ -23,10 +23,10 @@ def _exec(sql, args):
     catchup=False,
     max_active_runs=1,
     params={
-        "inserts": Param(20, type="integer", minimum=0),
-        "updates": Param(10, type="integer", minimum=0),
-        "soft_deletes": Param(5, type="integer", minimum=0),
-        "hard_deletes": Param(0, type="integer", minimum=0),
+        "inserts": Param(0, type="integer", minimum=0),
+        "updates": Param(0, type="integer", minimum=0),
+        "soft_deletes": Param(0, type="integer", minimum=0),
+        "hard_deletes": Param(10, type="integer", minimum=0),
     },
     tags=["kumparan", "simulator"],
 )

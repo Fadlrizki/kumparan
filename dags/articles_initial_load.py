@@ -32,9 +32,9 @@ def articles_initial_load():
     def check():
         assert_no_duplicates()
         src = PostgresHook(postgres_conn_id=PG_CONN).get_first(
-            "SELECT count(*) FROM articles")[0]
+            "SELECT count(*) FROM articles WHERE deleted_at IS NULL")[0]
         dwh = run_query(
-            f"SELECT COUNT(*) AS c FROM `{PROJECT_ID}.dwh.articles`")[0]["c"]
+            f"SELECT COUNTIF(deleted_at IS NULL) AS c FROM `{PROJECT_ID}.dwh.articles`")[0]["c"]
         if src != dwh:
             raise ValueError(f"Row count tidak sama: source={src}, dwh={dwh}")
 
