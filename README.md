@@ -250,18 +250,9 @@ After the source has been populated and GCP connectivity is available:
 
 The `source_simulator` DAG is optional and intended only for testing changes against the local source database.
 
-## Historical Backfill
+## DATA
 
-**Data**
-- Articles come from the Hugging Face dataset `iqballx/indonesian_news_datasets`. `author_id`
-  is synthetic. The 2016 rows are synthetic copies of existing articles with shifted dates,
-  created only to test the backfill.
-
-Since article data may go back to 2016 while the pipeline is only being introduced now, the pipeline supports backfills through the `since` and `until` parameters.
-
-This approach allows historical data to be processed in controlled time ranges rather than relying on a single large full-load operation. For validation, the seed script provides the `--history-2016` option to add synthetic sample records dated in 2016.
-
-The incremental watermark is based on `updated_at`, not `published_at`, so changes to previously loaded articles can also be captured.
+Articles come from the Hugging Face dataset `iqballx/indonesian_news_datasets`. `author_id` is synthetic. The 2016 rows are synthetic copies of existing articles with shifted dates, created only to test the backfill.
 
 ## Reliability and Data Quality
 
