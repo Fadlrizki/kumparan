@@ -8,112 +8,111 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from google.cloud import bigquery
 
 PROJECT_ID = os.environ["PROJECT_ID"]
-BUCKET = f"{PROJECT_ID}-kumparan-staging"
-BQ_LOCATION = "asia-southeast2"
-GCP_CONN = "google_cloud_default"
-PG_CONN = "source_postgres"
+BUCKET = os.environ.get("GCS_BUCKET", f"{PROJECT_ID}-kumparan-staging")
+BQ_LOCATION = os.environ.get("BQ_LOCATION", "asia-southeast2")
+MAX_BYTES_BILLED = int(os.environ.get("BQ_MAX_BYTES_BILLED", 50 * 1024**3))  # pagar biaya per query
+GCP_CONN, PG_CONN = "google_cloud_default", "source_postgres"
 
-COLUMNS = ["id", "title", "content", "published_at", "author_id",
-           "created_at", "updated_at", "deleted_at"]
-TS_COLS = ["published_at", "created_at", "updated_at", "deleted_at"]
+DWH = f"{PROJECT_ID}.dwh.articles"
+STAGING_INCR = f"{PROJECT_ID}.staging.articles_incr"
+STAGING_IDS = f"{PROJECT_ID}.staging.articles_ids"
+STAGING_CANDIDATES = f"{PROJECT_ID}.staging.articles_candidates"
+SQL_DIR = os.path.join(os.path.dirname(__file__), "..", "sql")
 
-SCHEMA = [
-    bigquery.SchemaField("id", "INT64"),
-    bigquery.SchemaField("title", "STRING"),
-    bigquery.SchemaField("content", "STRING"),
-    bigquery.SchemaField("published_at", "TIMESTAMP"),
-    bigquery.SchemaField("author_id", "INT64"),
-    bigquery.SchemaField("created_at", "TIMESTAMP"),
-    bigquery.SchemaField("updated_at", "TIMESTAMP"),
-    bigquery.SchemaField("deleted_at", "TIMESTAMP"),
-]
+_TYPES = {"id": "INT64", "title": "STRING", "content": "STRING",
+          "published_at": "TIMESTAMP", "author_id": "INT64",
+          "created_at": "TIMESTAMP", "updated_at": "TIMESTAMP", "deleted_at": "TIMESTAMP"}
+COLUMNS = list(_TYPES)
+TS_COLS = [c for c, t in _TYPES.items() if t == "TIMESTAMP"]
+SCHEMA = [bigquery.SchemaField(c, t) for c, t in _TYPES.items()]
+REQUIRED = ["id", "created_at", "updated_at"]
 
 
-def extract_to_gcs(sql, params, prefix, chunk_rows=10_000) -> int:
-    """Baca dari Postgres per chunk (server-side cursor), tulis parquet ke GCS."""
+# ---------- BigQuery ----------
+def bq_client():
+    return BigQueryHook(gcp_conn_id=GCP_CONN, location=BQ_LOCATION).get_client(
+        project_id=PROJECT_ID, location=BQ_LOCATION)
+
+
+def run_query(sql, params=None):
+    cfg = bigquery.QueryJobConfig(query_parameters=params or [],
+                                  maximum_bytes_billed=MAX_BYTES_BILLED)
+    job = bq_client().query(sql, job_config=cfg, location=BQ_LOCATION)
+    job.result()
+    return job
+
+# ---------- dataset ----------
+def init_dwh():
+    with open(os.path.join(SQL_DIR, "ddl_dwh.sql")) as f:
+        run_query(f.read())
+
+
+def get_watermark():
+    rows = list(run_query(
+        f"SELECT MAX(updated_at) AS wm FROM `{DWH}` WHERE updated_at <= CURRENT_TIMESTAMP()").result())
+    return rows[0]["wm"]
+
+# ---------- Parquet ----------
+def load_staging(prefix, table):
+    bq_client().load_table_from_uri(
+        f"gs://{BUCKET}/{prefix}*.parquet", table,
+        job_config=bigquery.LoadJobConfig(
+            schema=SCHEMA, source_format=bigquery.SourceFormat.PARQUET,
+            write_disposition="WRITE_TRUNCATE"),
+        location=BQ_LOCATION,
+    ).result()
+
+# ---------- Upsert ----------
+def merge_sql(staging: str) -> str:
+    sets = ", ".join(f"{c} = S.{c}" for c in COLUMNS if c != "id")
+    cols = ", ".join(COLUMNS)
+    vals = ", ".join(f"S.{c}" for c in COLUMNS)
+    return f"""
+MERGE `{DWH}` T
+USING `{staging}` S
+ON T.id = S.id
+WHEN MATCHED AND S.updated_at >= T.updated_at THEN
+  UPDATE SET {sets}
+WHEN NOT MATCHED THEN
+  INSERT ({cols}) VALUES ({vals})
+"""
+
+
+def assert_no_duplicates():
+    dup = list(run_query(
+        f"SELECT COUNT(*) - COUNT(DISTINCT id) AS dup FROM `{DWH}`").result())[0]["dup"]
+    if dup:
+        raise ValueError(f"{dup} id duplikat di {DWH}")
+
+
+# ---------- Postgres -> parquet -> GCS ----------
+def extract_to_gcs(where_sql, params, prefix, chunk_rows=50_000) -> int:
     gcs = GCSHook(gcp_conn_id=GCP_CONN)
-
-    # idempotent: bersihkan sisa run/retry sebelumnya di prefix yang sama
-    for obj in gcs.list(BUCKET, prefix=prefix) or []:
-        gcs.delete(BUCKET, obj)
+    for name in gcs.list(BUCKET, prefix=prefix) or []:      
+        gcs.delete(BUCKET, name)
 
     conn = PostgresHook(postgres_conn_id=PG_CONN).get_conn()
     total, part = 0, 0
     try:
-        with conn.cursor(name="articles_extract") as cur:   # named = server-side
-            cur.execute(sql, params)
-            while True:
-                rows = cur.fetchmany(chunk_rows)
-                if not rows:
-                    break
+        with conn.cursor() as cur:
+            cur.execute("SET TIME ZONE 'UTC'")               
+        with conn.cursor(name="articles_extract") as cur:    
+            cur.execute(f"SELECT {', '.join(COLUMNS)} FROM articles {where_sql}", params)
+            while rows := cur.fetchmany(chunk_rows):
                 df = pd.DataFrame(rows, columns=COLUMNS)
                 df["id"] = df["id"].astype("int64")
                 df["author_id"] = df["author_id"].astype("Int64")
                 for c in TS_COLS:
-                    df[c] = pd.to_datetime(df[c], utc=True)
-
+                    df[c] = pd.to_datetime(df[c], utc=True)  
+                if df[REQUIRED].isna().any().any():
+                    raise ValueError("id/created_at/updated_at NULL di source: kontrak data dilanggar")
                 with tempfile.TemporaryDirectory() as d:
                     local = f"{d}/part.parquet"
-                    df.to_parquet(local, index=False,
-                                  coerce_timestamps="us",
-                                  allow_truncated_timestamps=True)
+                    df.to_parquet(local, index=False, coerce_timestamps="us",
+                                  allow_truncated_timestamps=True)  
                     gcs.upload(BUCKET, f"{prefix}part-{part:05d}.parquet", local)
                 total += len(df)
                 part += 1
     finally:
         conn.close()
     return total
-
-
-def _bq_client():
-    return BigQueryHook(gcp_conn_id=GCP_CONN, location=BQ_LOCATION).get_client(
-        project_id=PROJECT_ID, location=BQ_LOCATION)
-
-
-def load_staging(prefix, table):
-    """Load parquet di GCS ke tabel staging (ditimpa tiap run)."""
-    job = _bq_client().load_table_from_uri(
-        f"gs://{BUCKET}/{prefix}*.parquet",
-        f"{PROJECT_ID}.staging.{table}",
-        job_config=bigquery.LoadJobConfig(
-            schema=SCHEMA,
-            source_format=bigquery.SourceFormat.PARQUET,
-            write_disposition="WRITE_TRUNCATE",
-        ),
-        location=BQ_LOCATION,
-    )
-    job.result()
-
-
-def run_query(sql):
-    return list(_bq_client().query(sql, location=BQ_LOCATION).result())
-
-
-def merge_sql(staging_table: str) -> str:
-    return f"""
-MERGE `{PROJECT_ID}.dwh.articles` T
-USING (
-  SELECT * EXCEPT(rn) FROM (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY updated_at DESC) AS rn
-    FROM `{PROJECT_ID}.staging.{staging_table}`
-  ) WHERE rn = 1
-) S
-ON T.id = S.id
-WHEN MATCHED AND S.updated_at >= T.updated_at THEN UPDATE SET
-  title = S.title, content = S.content, published_at = S.published_at,
-  author_id = S.author_id, created_at = S.created_at,
-  updated_at = S.updated_at, deleted_at = S.deleted_at,
-  _loaded_at = CURRENT_TIMESTAMP()
-WHEN NOT MATCHED THEN INSERT
-  (id, title, content, published_at, author_id, created_at, updated_at, deleted_at, _loaded_at)
-VALUES
-  (S.id, S.title, S.content, S.published_at, S.author_id, S.created_at,
-   S.updated_at, S.deleted_at, CURRENT_TIMESTAMP())
-"""
-
-
-def assert_no_duplicates():
-    r = run_query(
-        f"SELECT COUNT(*) - COUNT(DISTINCT id) AS dup FROM `{PROJECT_ID}.dwh.articles`")[0]
-    if r["dup"] > 0:
-        raise ValueError(f"Ditemukan {r['dup']} id duplikat di dwh.articles")
