@@ -252,6 +252,11 @@ The `source_simulator` DAG is optional and intended only for testing changes aga
 
 ## Historical Backfill
 
+**Data**
+- Articles come from the Hugging Face dataset `iqballx/indonesian_news_datasets`. `author_id`
+  is synthetic. The 2016 rows are synthetic copies of existing articles with shifted dates,
+  created only to test the backfill.
+
 Since article data may go back to 2016 while the pipeline is only being introduced now, the pipeline supports backfills through the `since` and `until` parameters.
 
 This approach allows historical data to be processed in controlled time ranges rather than relying on a single large full-load operation. For validation, the seed script provides the `--history-2016` option to add synthetic sample records dated in 2016.
@@ -335,11 +340,6 @@ validating the solution.
 I did not write most of the code line by line. I understand the design and can explain
 it, including why the watermark replaces a schedule-based window, why reconciliation reads
 DWH candidates before source IDs, and why the MERGE is safe to repeat.
-
-**Data**
-- Articles come from the Hugging Face dataset `iqballx/indonesian_news_datasets`. `author_id`
-  is synthetic. The 2016 rows are synthetic copies of existing articles with shifted dates,
-  created only to test the backfill.
 ---
 
 **Assessment:** Data Engineer Assessment 2026  
