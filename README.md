@@ -42,7 +42,7 @@ This DAG is scheduled to run every hour at minute `00`. It consists of three tas
    - Reads the watermark from `MAX(updated_at)` in `dwh.articles`.
    - Moves the watermark back by an **overlap window of 1 hour** to account for late-arriving changes and updates around run boundaries.
    - Extracts source rows whose `updated_at` is within the selected range, then writes them as Parquet files to GCS.
-   - If the DWH is empty, the pipeline performs a **full load**.
+   - If the datawarehouse is empty, the pipeline performs a **full load**.
    - Reads source data in chunks using a server-side cursor to avoid loading the entire dataset into memory at once.
 
 3. **`load_and_merge`**
@@ -57,17 +57,17 @@ The same DAG also supports **backfills** through the `since` and `until` paramet
 An incremental ETL based on `updated_at` cannot detect rows that have been physically removed from the source. To handle **hard deletes**, a reconciliation DAG runs daily at **02:30 UTC**.
 
 1. **`snapshot`**
-   - Copies active article IDs from the DWH into `staging.articles_candidates` as the initial snapshot (t0).
+   - Copies active article IDs from the Datawarehouse into `staging.articles_candidates` as the initial snapshot (t0).
    - Reads all article IDs still present in the source into `staging.articles_ids` as the subsequent snapshot (t1).
    - The snapshots are created sequentially to establish two distinct points in time for comparison.
 
 2. **`mark_deleted`**
-   - Finds IDs present in the DWH candidate snapshot but missing from the source snapshot.
+   - Finds IDs present in the Datawarehouse candidate snapshot but missing from the source snapshot.
    - Sets `deleted_at` for rows identified as deleted.
    - Includes safety checks: the task is aborted if the source returns zero IDs or if more than **5%** of candidates would be marked as deleted. This helps prevent accidental mass deletion caused by an unavailable source or incomplete snapshot.
 
 3. **`check`**
-   - Verifies that there are no duplicate IDs in the DWH table.
+   - Verifies that there are no duplicate IDs in the Datawarehouse table.
 
 This reconciliation uses **soft deletes in the DWH**: rows are not physically removed; instead, their `deleted_at` field is populated. This preserves historical records while allowing BI consumers to use `dwh.articles_active` to query only active articles.
 
@@ -76,7 +76,7 @@ This reconciliation uses **soft deletes in the DWH**: rows are not physically re
 | Object | Purpose |
 |---|---|
 | `staging.articles_incr` | Holds the latest Parquet load for the incremental `MERGE`; overwritten on each run. |
-| `staging.articles_candidates` | Snapshot of active DWH article IDs for delete reconciliation. |
+| `staging.articles_candidates` | Snapshot of active Datawarehouse article IDs for delete reconciliation. |
 | `staging.articles_ids` | Snapshot of all article IDs currently present in the source. |
 | `dwh.articles` | Main table containing the latest version of each article, including rows with a populated `deleted_at`. |
 | `dwh.articles_active` | View exposing only rows where `deleted_at IS NULL`, intended for analytics and BI consumers. |
@@ -128,7 +128,7 @@ kumparan/
 **SQL**
 
 - `sql/ddl_source.sql` — PostgreSQL source `articles` schema, including the primary key, timestamp columns, `updated_at` index, and a trigger that updates `updated_at` whenever a row is updated.
-- `sql/ddl_dwh.sql` — BigQuery DDL for datasets, DWH and staging tables, and the active-articles view.
+- `sql/ddl_dwh.sql` — BigQuery DDL for datasets, Datawarehouse and staging tables, and the active-articles view.
 
 **Scripts**
 
@@ -245,7 +245,7 @@ After the source has been populated and GCP connectivity is available:
 1. Open the Airflow UI.
 2. Make sure the `articles_etl` DAG is enabled.
 3. Trigger the DAG manually for the initial execution, or wait for its hourly schedule.
-4. The first run performs a full load if the DWH table is empty.
+4. The first run performs a full load if the Datawarehouse table is empty.
 5. Enable `articles_reconcile_deletes` to run hard-delete reconciliation on its daily schedule.
 
 The `source_simulator` DAG is optional and intended only for testing changes against the local source database.
@@ -275,9 +275,9 @@ The following artifacts are created in external services when the pipeline runs;
 |---|---|
 | `gs://<PROJECT_ID>-kumparan-staging/articles/<ts>/part-*.parquet` | Extracted Parquet files for each run; objects are deleted after 7 days by the bucket lifecycle rule. |
 | `staging.articles_incr` | Latest load from GCS used by the `MERGE` process. |
-| `staging.articles_candidates` | Snapshot of active DWH IDs for reconciliation. |
+| `staging.articles_candidates` | Snapshot of active datawarehouse IDs for reconciliation. |
 | `staging.articles_ids` | Snapshot of source IDs for reconciliation. |
-| `dwh.articles` | Main DWH table. |
+| `dwh.articles` | Main datawarehouse table. |
 | `dwh.articles_active` | Active-articles view for BI consumers. |
 
 ## Security Notes
