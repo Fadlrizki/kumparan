@@ -23,9 +23,10 @@ def articles_hourly_etl():
     def extract(data_interval_start=None, data_interval_end=None, ts_nodash=None):
         sql = (f"SELECT {', '.join(COLUMNS)} FROM articles "
                "WHERE updated_at >= %s AND updated_at < %s ORDER BY id")
-        return extract_to_gcs(
-            sql, (data_interval_start - LOOKBACK, data_interval_end),
-            prefix=f"articles/hourly/{ts_nodash}/")
+        lo, hi = data_interval_start - LOOKBACK, data_interval_end
+        n = extract_to_gcs(sql, (lo, hi), prefix=f"articles/hourly/{ts_nodash}/")
+        print(f"window=[{lo}, {hi}) rows={n}")
+        return n
 
     @task.short_circuit
     def has_rows(n):
