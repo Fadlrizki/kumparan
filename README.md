@@ -327,7 +327,7 @@ validating the solution.
 - Made decisions: dropped the `_loaded_at` column, added synthetic 2016 data without a tag to
   exercise the backfill, and decided what to keep in the repo.
 - Edited the documentation.
-  I did not write most of the code line by line. I understand the design and can explain it, including why the watermark replaces a schedule-based window, why reconciliation reads DWH candidates before source IDs, and why the MERGE is safe to repeat.
+I did not write most of the code line by line. I understand the design and can explain it, including why the watermark replaces a schedule-based window, why reconciliation reads DWH candidates before source IDs, and why the MERGE is safe to repeat.
 ---
 
 **Assessment:** Data Engineer Assessment 2026  
