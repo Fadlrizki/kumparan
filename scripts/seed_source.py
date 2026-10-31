@@ -55,26 +55,40 @@ def seed_dataset(conn, limit):
             break
 
 
-def add_legacy_2016(conn, n):
-    """Data 'lama' sintetis: salinan acak dengan created_at/updated_at di tahun 2016."""
+def add_history_2016(conn, n):
+    """Data historis sintetis: salinan acak artikel yang ada dengan tanggal dipindah ke 2016."""
     with conn, conn.cursor() as cur:
-        cur.execute("""
+        cur.execute("SELECT count(*) FROM articles "
+                    "WHERE created_at >= '2016-01-01' AND created_at < '2017-01-01'")
+        if cur.fetchone()[0]:
+            print("data 2016 sudah ada, dilewati")
+            return
+        cur.execute(r"""
             INSERT INTO articles (id, title, content, published_at, author_id, created_at, updated_at)
             SELECT (SELECT COALESCE(MAX(id), 0) FROM articles) + ROW_NUMBER() OVER (),
-                   '[LEGACY-2016] ' || title, content, ts, author_id, ts, ts
-            FROM (SELECT title, content, author_id,
-                         timestamptz '2016-01-01 00:00:00+00' + random() * interval '365 days' AS ts
-                  FROM articles ORDER BY random() LIMIT %s) s
+                   title, content, pub, author_id, ts, pub
+            FROM (
+                SELECT title, content, author_id, ts,
+                       ts + random() * interval '3 hours' AS pub
+                FROM (
+                    SELECT regexp_replace(title, '( \[(edited|outage2?)\])+$', '') AS title,
+                           content, author_id,
+                           timestamptz '2016-01-01 00:00:00+00' + random() * interval '365 days' AS ts
+                    FROM articles
+                    WHERE created_at < '2024-01-01'
+                    ORDER BY random() LIMIT %s
+                ) a
+            ) b
         """, (n,))
-        print(f"legacy-2016 inserted={cur.rowcount}")
+        print(f"data 2016 ditambahkan={cur.rowcount}")
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--limit", type=int, default=200_000)
-    p.add_argument("--legacy-2016", type=int, default=0, help="jumlah baris legacy sintetis (mis. 20000)")
+    p.add_argument("--history-2016", type=int, default=0, help="jumlah baris historis sintetis tahun 2016")
     a = p.parse_args()
     c = connect()
     seed_dataset(c, a.limit)
-    if a.legacy_2016:
-        add_legacy_2016(c, a.legacy_2016)
+    if a.history_2016:
+        add_history_2016(c, a.history_2016)
