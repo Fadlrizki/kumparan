@@ -95,8 +95,7 @@ kumparan/
 ├── dags/
 │   ├── etl_common.py
 │   ├── articles_etl.py
-│   ├── articles_reconcile_deletes.py
-│   └── source_simulator.py
+│   └── articles_reconcile_deletes.py
 ├── sql/
 │   ├── ddl_source.sql
 │   └── ddl_dwh.sql
