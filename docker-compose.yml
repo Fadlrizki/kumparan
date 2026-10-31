@@ -1,15 +1,16 @@
 x-airflow-common: &airflow-common
-  image: apache/airflow:2.10.5
+  build: .
+  image: kumparan-airflow:2.10.5
+  restart: unless-stopped
   environment: &airflow-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow_db/airflow
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:?isi di .env}@airflow_db/airflow
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-    AIRFLOW__WEBSERVER__SECRET_KEY: dev-only-secret
-    _PIP_ADDITIONAL_REQUIREMENTS: "pyarrow"
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:?isi di .env}
     GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/secrets/adc.json
-    AIRFLOW_CONN_SOURCE_POSTGRES: postgresql://source:source@source_db:5432/kumparan_source
+    AIRFLOW_CONN_SOURCE_POSTGRES: postgresql://source:${SOURCE_DB_PASSWORD:?isi di .env}@source_db:5432/kumparan_source
+    AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?project=${PROJECT_ID:?isi di .env}
     PROJECT_ID: ${PROJECT_ID}
-    AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?project=${PROJECT_ID}
   volumes:
     - ./dags:/opt/airflow/dags
     - ./sql:/opt/airflow/sql
@@ -24,15 +25,17 @@ services:
   source_db:
     image: postgres:16
     container_name: kumparan_source_db
+    restart: unless-stopped
+    command: ["postgres", "-c", "timezone=UTC", "-c", "log_timezone=UTC"]
     environment:
       POSTGRES_USER: source
-      POSTGRES_PASSWORD: source
+      POSTGRES_PASSWORD: ${SOURCE_DB_PASSWORD:?isi di .env}
       POSTGRES_DB: kumparan_source
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"          # hanya localhost
     volumes:
       - source_db_data:/var/lib/postgresql/data
-      - ./sql/ddl_source.sql:/docker-entrypoint-initdb.d/01_ddl.sql
+      - ./sql/ddl_source.sql:/docker-entrypoint-initdb.d/01_ddl.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U source -d kumparan_source"]
       interval: 5s
@@ -40,9 +43,10 @@ services:
 
   airflow_db:
     image: postgres:16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:?isi di .env}
       POSTGRES_DB: airflow
     volumes:
       - airflow_db_data:/var/lib/postgresql/data
@@ -53,19 +57,26 @@ services:
 
   airflow-init:
     <<: *airflow-common
+    restart: "no"
     entrypoint: /bin/bash
+    environment:
+      <<: *airflow-env
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?isi di .env}
     command:
       - -c
       - |
-        airflow db migrate &&
-        airflow users create --username admin --password admin \
-          --firstname Admin --lastname User --role Admin --email admin@example.com || true
+        set -e
+        airflow db migrate
+        airflow users list | grep -qw admin || airflow users create \
+          --username admin --password "$$AIRFLOW_ADMIN_PASSWORD" \
+          --firstname Admin --lastname User --role Admin --email admin@example.com
+        airflow pools set dwh_write 1 "serialisasi DML ke dwh.articles"
 
   airflow-webserver:
     <<: *airflow-common
     command: webserver
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       airflow-init:
         condition: service_completed_successfully

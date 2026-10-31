@@ -1,3 +1,7 @@
-huggingface_hub
+apache-airflow==2.10.5
+apache-airflow-providers-google
+apache-airflow-providers-postgres
 pandas
+pyarrow
 psycopg2-binary
+huggingface_hub
