@@ -1,4 +1,4 @@
-# skema tabel sumber (Postgres)
+-- Skema DataWarehouse (BigQuery)
 CREATE SCHEMA IF NOT EXISTS staging OPTIONS (location = "asia-southeast2");
 CREATE SCHEMA IF NOT EXISTS dwh     OPTIONS (location = "asia-southeast2");
 
@@ -16,6 +16,6 @@ CREATE TABLE IF NOT EXISTS dwh.articles (
 PARTITION BY DATE(created_at)
 CLUSTER BY id;
 
--- Konsumen BI sebaiknya query view ini, bukan tabel mentah.
+-- query view
 CREATE OR REPLACE VIEW dwh.articles_active AS
 SELECT * FROM dwh.articles WHERE deleted_at IS NULL;

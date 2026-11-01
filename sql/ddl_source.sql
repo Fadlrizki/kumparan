@@ -18,7 +18,6 @@ BEGIN
   RETURN NEW;
 END $$ LANGUAGE plpgsql;
 
--- hanya BEFORE UPDATE: INSERT (seed data historis) tetap membawa updated_at aslinya
 DROP TRIGGER IF EXISTS trg_articles_touch ON articles;
 CREATE TRIGGER trg_articles_touch BEFORE UPDATE ON articles
   FOR EACH ROW EXECUTE FUNCTION articles_touch_updated_at();

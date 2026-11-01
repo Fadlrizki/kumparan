@@ -11,7 +11,7 @@ from google.cloud import bigquery
 PROJECT_ID = os.environ["PROJECT_ID"]
 BUCKET = os.environ.get("GCS_BUCKET", f"{PROJECT_ID}-kumparan-staging")
 BQ_LOCATION = os.environ.get("BQ_LOCATION", "asia-southeast2")
-MAX_BYTES_BILLED = int(os.environ.get("BQ_MAX_BYTES_BILLED", 50 * 1024**3))  # pagar biaya per query
+MAX_BYTES_BILLED = int(os.environ.get("BQ_MAX_BYTES_BILLED", 50 * 1024**3)) 
 GCP_CONN, PG_CONN = "google_cloud_default", "source_postgres"
 
 DWH = f"{PROJECT_ID}.dwh.articles"
